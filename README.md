@@ -16,7 +16,7 @@ RandKey is a lightweight tool for generating random keys or tokens, suitable for
 ## 💻 Example Usage
 
 ```bash
-RandKey.exe -aa -l 32 -c 5 -ai language
+RandKey.exe -aa -l 32 -c 5 -ai 語言
 ```
 
 ```bash
