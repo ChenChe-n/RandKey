@@ -10,6 +10,8 @@
 #include <cctype>
 #include <cstdint>
 #include <stdexcept>
+#include <filesystem>
+#include <fstream>
 
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
@@ -206,86 +208,105 @@ static const std::map<std::u32string, int32_t> arg_table = {
     {U"-aA", 102},
     {U"-a0", 103},
     {U"-a!", 104},
-    {U"-ai", 105}};
+    {U"-ai", 105},
+    {U"-af", 106},
+    {U"-o", 200},
+};
 
 // 多语言字符串表
 static const std::map<std::string, std::map<std::u32string, std::u32string>> lang_table = {
-    {"en-us",
-     {{U"help_title", U"Random String Generator - Help"},
-      {U"help_usage", U"Usage: randstr [options]"},
-      {U"help_options", U"Options:\n"
-                        U"  -h, -help      Show this help message\n"
-                        U"  -S <seed>      Set random seed (64-bit integer)\n"
-                        U"  -s <seed>      Set seed with hardware entropy\n"
-                        U"  -l <length>    Set string length (default: 12)\n"
-                        U"  -c <count>     Set number of strings (default: 1)\n"
-                        U"  -all           Use all character sets\n"
-                        U"  -aa            Add lowercase letters (a-z)\n"
-                        U"  -aA            Add uppercase letters (A-Z)\n"
-                        U"  -a0            Add digits (0-9)\n"
-                        U"  -a!            Add special characters\n"
-                        U"  -ai <chars>    Add custom characters"},
-      {U"error_seed", U"Error: Seed must be a 64-bit integer"},
-      {U"error_length", U"Error: Length must be a positive integer"},
-      {U"error_count", U"Error: Count must be a positive integer"},
-      {U"error_no_chars", U"Error: No character set specified"}}},
     {"zh-cn",
-     {{U"help_title", U"随机字符串生成器 - 帮助"},
-      {U"help_usage", U"用法: randstr [选项]"},
-      {U"help_options", U"选项:\n"
-                        U"  -h, -help      显示帮助信息\n"
-                        U"  -S <种子>      设置随机数种子 (64位整数)\n"
-                        U"  -s <种子>      设置种子并添加硬件熵\n"
-                        U"  -l <长度>      设置字符串长度 (默认: 12)\n"
-                        U"  -c <数量>      设置生成字符串数量 (默认: 1)\n"
-                        U"  -all           使用所有字符集\n"
-                        U"  -aa            添加小写字母 (a-z)\n"
-                        U"  -aA            添加大写字母 (A-Z)\n"
-                        U"  -a0            添加数字 (0-9)\n"
-                        U"  -a!            添加特殊字符\n"
-                        U"  -ai <字符>     添加自定义字符"},
-      {U"error_seed", U"错误: 种子必须是64位整数"},
-      {U"error_length", U"错误: 长度必须是正整数"},
-      {U"error_count", U"错误: 数量必须是正整数"},
-      {U"error_no_chars", U"错误: 未指定字符集"}}},
+     {
+         {U"help_title", U"随机字符串生成器 - 帮助"},
+         {U"help_usage", U"用法: randstr [选项]"},
+         {U"help_options", U"选项:\n"
+                           U"  -h, -help      显示帮助信息\n"
+                           U"  -S <种子>      设置随机数种子 (64位整数)\n"
+                           U"  -s <种子>      设置种子并添加硬件熵\n"
+                           U"  -l <长度>      设置字符串长度 (默认: 12)\n"
+                           U"  -c <数量>      设置生成字符串数量 (默认: 1)\n"
+                           U"  -all           使用所有字符集\n"
+                           U"  -aa            添加小写字母 (a-z)\n"
+                           U"  -aA            添加大写字母 (A-Z)\n"
+                           U"  -a0            添加数字 (0-9)\n"
+                           U"  -a!            添加特殊字符\n"
+                           U"  -ai <字符>     添加自定义字符\n"
+                           U"  -af <文件名>   从文件中读取字符\n"
+                           U"  -o <文件名>    输出到文件\n"},
+         {U"error_seed", U"错误: 种子必须是64位整数"},
+         {U"error_length", U"错误: 长度必须是正整数"},
+         {U"error_count", U"错误: 数量必须是正整数"},
+         {U"error_missing_arg", U"错误: 缺少参数 "},
+     }},
+    {"en-us",
+     {
+         {U"help_title", U"Random String Generator - Help"},
+         {U"help_usage", U"Usage: randstr [options]"},
+         {U"help_options", U"Options:\n"
+                           U"  -h, -help      Show this help message\n"
+                           U"  -S <seed>      Set random seed (64-bit integer)\n"
+                           U"  -s <seed>      Set seed with hardware entropy\n"
+                           U"  -l <length>    Set string length (default: 12)\n"
+                           U"  -c <count>     Set number of strings (default: 1)\n"
+                           U"  -all           Use all character sets\n"
+                           U"  -aa            Add lowercase letters (a-z)\n"
+                           U"  -aA            Add uppercase letters (A-Z)\n"
+                           U"  -a0            Add digits (0-9)\n"
+                           U"  -a!            Add special characters\n"
+                           U"  -ai <chars>    Add custom characters\n"
+                           U"  -af <file>     Read custom characters from file\n"
+                           U"  -o <file>       Write passwords to file\n"},
+         {U"error_seed", U"Error: Seed must be a 64-bit integer"},
+         {U"error_length", U"Error: Length must be a positive integer"},
+         {U"error_count", U"Error: Count must be a positive integer"},
+         {U"error_missing_arg", U"Error: Missing argument"},
+     }},
     {"zh-tw",
-     {{U"help_title", U"隨機字串生成器 - 幫助"},
-      {U"help_usage", U"用法: randstr [選項]"},
-      {U"help_options", U"選項:\n"
-                        U"  -h, -help      顯示幫助訊息\n"
-                        U"  -S <種子>      設置隨機種子 (64位整數)\n"
-                        U"  -s <種子>      設置種子並添加硬體熵\n"
-                        U"  -l <長度>      設置字串長度 (預設: 12)\n"
-                        U"  -c <數量>      設置生成字串數量 (預設: 1)\n"
-                        U"  -all           使用所有字符集\n"
-                        U"  -aa            添加小寫字母 (a-z)\n"
-                        U"  -aA            添加大寫字母 (A-Z)\n"
-                        U"  -a0            添加數字 (0-9)\n"
-                        U"  -a!            添加特殊字符\n"
-                        U"  -ai <字符>     添加自定義字符"},
-      {U"error_seed", U"錯誤: 種子必須是64位整數"},
-      {U"error_length", U"錯誤: 長度必須是正整數"},
-      {U"error_count", U"錯誤: 數量必須是正整數"},
-      {U"error_no_chars", U"錯誤: 未指定字符集"}}},
+     {
+         {U"help_title", U"隨機字串生成器 - 幫助"},
+         {U"help_usage", U"用法: randstr [選項]"},
+         {U"help_options", U"選項:\n"
+                           U"  -h, -help      顯示幫助訊息\n"
+                           U"  -S <種子>      設置隨機種子 (64位整數)\n"
+                           U"  -s <種子>      設置種子並添加硬體熵\n"
+                           U"  -l <長度>      設置字串長度 (預設: 12)\n"
+                           U"  -c <數量>      設置生成字串數量 (預設: 1)\n"
+                           U"  -all           使用所有字符集\n"
+                           U"  -aa            添加小寫字母 (a-z)\n"
+                           U"  -aA            添加大寫字母 (A-Z)\n"
+                           U"  -a0            添加數字 (0-9)\n"
+                           U"  -a!            添加特殊字符\n"
+                           U"  -ai <字符>     添加自定義字符\n"
+                           U"  -af <文件>     從文件讀取自定義字符\n"
+                           U"  -o <文件>      輸出到文件\n"},
+         {U"error_seed", U"錯誤: 種子必須是64位整數"},
+         {U"error_length", U"錯誤: 長度必須是正整數"},
+         {U"error_count", U"錯誤: 數量必須是正整數"},
+         {U"error_missing_arg", U"錯誤: 引數不足"},
+     }},
     {"ja-jp",
-     {{U"help_title", U"ランダム文字列生成器 - ヘルプ"},
-      {U"help_usage", U"使用法: randstr [オプション]"},
-      {U"help_options", U"オプション:\n"
-                        U"  -h, -help      ヘルプを表示\n"
-                        U"  -S <シード>    乱数シードを設定 (64ビット整数)\n"
-                        U"  -s <シード>    シードにハードウェアエントロピーを追加\n"
-                        U"  -l <長さ>      文字列の長さを設定 (デフォルト: 12)\n"
-                        U"  -c <数>        生成する文字列の数を設定 (デフォルト: 1)\n"
-                        U"  -all           すべての文字セットを使用\n"
-                        U"  -aa            小文字 (a-z) を追加\n"
-                        U"  -aA            大文字 (A-Z) を追加\n"
-                        U"  -a0            数字 (0-9) を追加\n"
-                        U"  -a!            特殊文字を追加\n"
-                        U"  -ai <文字>     カスタム文字を追加"},
-      {U"error_seed", U"エラー: シードは64ビット整数である必要があります"},
-      {U"error_length", U"エラー: 長さは正の整数である必要があります"},
-      {U"error_count", U"エラー: 数は正の整数である必要があります"},
-      {U"error_no_chars", U"エラー: 文字セットが指定されていません"}}}};
+     {
+         {U"help_title", U"ランダム文字列生成器 - ヘルプ"},
+         {U"help_usage", U"使用法: randstr [オプション]"},
+         {U"help_options", U"オプション:\n"
+                           U"  -h, -help      ヘルプを表示\n"
+                           U"  -S <シード>    乱数シードを設定 (64ビット整数)\n"
+                           U"  -s <シード>    シードにハードウェアエントロピーを追加\n"
+                           U"  -l <長さ>      文字列の長さを設定 (デフォルト: 12)\n"
+                           U"  -c <数>        生成する文字列の数を設定 (デフォルト: 1)\n"
+                           U"  -all           すべての文字セットを使用\n"
+                           U"  -aa            小文字 (a-z) を追加\n"
+                           U"  -aA            大文字 (A-Z) を追加\n"
+                           U"  -a0            数字 (0-9) を追加\n"
+                           U"  -a!            特殊文字を追加\n"
+                           U"  -ai <文字>     カスタム文字を追加\n"
+                           U"  -af <ファイル>  カスタム文字をファイルから読み込む\n"
+                           U"  -o <ファイル>  出力先を指定\n"},
+         {U"error_seed", U"エラー: シードは64ビット整数である必要があります"},
+         {U"error_length", U"エラー: 長さは正の整数である必要があります"},
+         {U"error_count", U"エラー: 数は正の整数である必要があります"},
+         {U"error_missing_arg", U"エラー: 引数が不足しています"},
+     }}};
 
 // 获取本地化字符串
 std::u32string get_lang_string(const std::string &lang, const std::u32string &key)
@@ -418,7 +439,7 @@ std::string utf8_to_local(const std::u8string &str)
     }
 #else
     // 非 Windows 平台，假设本地编码为 UTF-8
-    return str;
+    return std::string(str.begin(), str.end());
 #endif
 }
 
@@ -462,22 +483,19 @@ std::u32string generate_random_string(const std::u32string &char_set,
     return U"";
 }
 
-int main(int argc, const char *argv[])
+int run(int argc, const char *argv[])
 {
-    // 设置控制台为UTF-8
-#if defined(_WIN32) || defined(_WIN64)
-    SetConsoleOutputCP(CP_UTF8);
-#endif
-
     std::string lang = get_lang(); // 获取系统语言
     std::u32string char_set;       // 字符集
 
     // 默认参数
-    uint64_t seed = 0;          // 种子
-    size_t length = 12;         // 生成长度
-    size_t count = 3;           // 生成数量
-    bool use_hw_entropy = true; // 使用硬件熵
-    bool show_help = false;     // 显示帮助
+    uint64_t seed = 0;                     // 种子
+    size_t length = 12;                    // 生成长度
+    size_t count = 1;                      // 生成数量
+    bool use_hw_entropy = true;            // 使用硬件熵
+    bool show_help = false;                // 显示帮助
+    bool is_write_file = false;            // 写入文件
+    std::filesystem::path write_file_path; // 文件路径
 
     // 转换参数为UTF-32
     std::vector<std::u32string> args;
@@ -514,6 +532,12 @@ int main(int argc, const char *argv[])
                         std::cout << seed << std::endl;
                     }
                 }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
+                }
                 break;
 
             case 2: // -s (设置种子+硬件熵)
@@ -529,6 +553,12 @@ int main(int argc, const char *argv[])
                     {
                         std::cout << seed << std::endl;
                     }
+                }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
                 }
                 break;
 
@@ -546,6 +576,12 @@ int main(int argc, const char *argv[])
                         return 1;
                     }
                 }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
+                }
                 break;
 
             case 4: // -c (设置数量)
@@ -561,6 +597,12 @@ int main(int argc, const char *argv[])
                         std::cerr << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_count"))) << std::endl;
                         return 1;
                     }
+                }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
                 }
                 break;
 
@@ -592,6 +634,49 @@ int main(int argc, const char *argv[])
                 {
                     const std::u32string &custom = args[++i];
                     char_set += custom;
+                }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
+                }
+                break;
+            case 106: // -af (从文件读取字符)
+                if (i + 1 < args.size())
+                {
+                    const std::u32string &custom = args[++i];
+                    std::filesystem::path path(custom);
+                    if (std::filesystem::exists(path)) // 文件存在
+                    {
+                        std::ifstream file(path);
+                        std::u32string line;
+                        std::string buffer;
+                        while (std::getline(file, buffer)) // 读取文件
+                        {
+                            char_set += utf8_to_utf32({buffer.begin(), buffer.end()});
+                        }
+                    }
+                }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
+                }
+                break;
+            case 200: // -o (输出到文件)
+                if (i + 1 < args.size())
+                {
+                    const std::u32string &custom = args[++i];
+                    is_write_file = true;
+                    write_file_path = custom;
+                }
+                else
+                {
+                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
+                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    return 1;
                 }
                 break;
             }
@@ -634,11 +719,37 @@ int main(int argc, const char *argv[])
     }
 
     // 生成并输出随机字符串
-    for (size_t i = 0; i < count; i++)
+    if (is_write_file)
     {
-        std::u32string rand_str = generate_random_string(char_set, length, seed, use_hw_entropy);
-        std::cout << utf8_to_local(utf32_to_utf8(rand_str)) << std::endl;
+        if (std::filesystem::exists(write_file_path)) // 文件存在，则删除
+        {
+            std::filesystem::remove(write_file_path);
+        }
+        std::ofstream out(write_file_path);
+        for (size_t i = 0; i < count; i++)
+        {
+            out << utf8_to_local(utf32_to_utf8(generate_random_string(char_set, length, seed, use_hw_entropy))) << std::endl;
+        }
     }
+    else
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            std::cout << utf8_to_local(utf32_to_utf8(generate_random_string(char_set, length, seed, use_hw_entropy))) << std::endl;
+        }
+    }
+    return 0;
+}
 
+int main(int argc, const char *argv[])
+{
+    try
+    {
+        run(argc, argv);
+    }
+    catch (const std::runtime_error &e)
+    {
+        std::string msg = e.what();
+    }
     return 0;
 }
