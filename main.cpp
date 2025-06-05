@@ -104,14 +104,6 @@ std::string get_lang()
     return "en-us";
 }
 
-#include <string>
-#include <codecvt>
-#include <locale>
-#include <stdexcept>
-
-#include <string>
-#include <cstdint>
-
 // UTF-8 到 UTF-32 转换（无检查）
 std::u32string utf8_to_utf32(const std::u8string &utf8_str)
 {
