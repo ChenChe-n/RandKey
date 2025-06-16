@@ -3,9 +3,6 @@
 #include <vector>
 #include <random>
 #include <map>
-#include <locale>
-#include <codecvt>
-#include <clocale>
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -13,187 +10,8 @@
 #include <filesystem>
 #include <fstream>
 
-#if defined(_WIN32) || defined(_WIN64)
-#include <windows.h>
-#elif defined(__APPLE__)
-#include <CoreFoundation/CoreFoundation.h>
-#elif defined(__linux__) || defined(__unix__)
-#include <langinfo.h>
-#endif
-
-// 获取系统语言
-std::string get_lang()
-{
-    static const std::map<std::string, std::string> lang_table = {
-        // Windows LCID → BCP 47
-        {"0409", "en-us"},
-        {"0804", "zh-cn"},
-        {"0404", "zh-tw"},
-        {"0411", "ja-jp"},
-
-        // macOS/CFLocale → BCP 47
-        {"zh-hans-cn", "zh-cn"},
-        {"zh-hant-tw", "zh-tw"},
-        {"en-us", "en-us"},
-        {"ja-jp", "ja-jp"},
-
-        // Linux/Unix → BCP 47
-        {"zh_cn.utf-8", "zh-cn"},
-        {"zh_tw.utf-8", "zh-tw"},
-        {"en_us.utf-8", "en-us"},
-        {"ja_jp.utf-8", "ja-jp"},
-        {"c", "en-us"} // 默认C区域
-    };
-
-    std::string raw_lang;
-
-#if defined(_WIN32) || defined(_WIN64)
-    LANGID langID = GetUserDefaultUILanguage();
-    char lang_code[5] = {0};
-    snprintf(lang_code, sizeof(lang_code), "%04X", langID);
-    raw_lang = lang_code;
-
-#elif defined(__APPLE__)
-    CFArrayRef preferredLangs = CFLocaleCopyPreferredLanguages();
-    if (preferredLangs && CFArrayGetCount(preferredLangs) > 0)
-    {
-        CFStringRef lang = (CFStringRef)CFArrayGetValueAtIndex(preferredLangs, 0);
-        char buffer[32] = {0};
-        if (CFStringGetCString(lang, buffer, sizeof(buffer), kCFStringEncodingUTF8))
-        {
-            raw_lang = buffer;
-        }
-        CFRelease(preferredLangs);
-    }
-
-#elif defined(__linux__) || defined(__unix__)
-    setlocale(LC_ALL, "");
-    const char *lang_c = setlocale(LC_CTYPE, nullptr);
-    if (lang_c)
-    {
-        raw_lang = lang_c;
-    }
-#endif
-
-    // 转换为小写
-    std::transform(raw_lang.begin(), raw_lang.end(), raw_lang.begin(),
-                   [](unsigned char c)
-                   { return std::tolower(c); });
-
-    // 查找映射表
-    auto it = lang_table.find(raw_lang);
-    if (it != lang_table.end())
-    {
-        return it->second;
-    }
-
-    // 尝试提取前2个字符
-    if (raw_lang.size() >= 2)
-    {
-        std::string lang_short = raw_lang.substr(0, 2);
-        if (lang_short == "zh")
-        {
-            // 中文简体和繁体的后备
-            if (raw_lang.find("tw") != std::string::npos || raw_lang.find("hant") != std::string::npos)
-            {
-                return "zh-tw";
-            }
-            return "zh-cn";
-        }
-        return lang_short;
-    }
-
-    return "en-us";
-}
-
-// UTF-8 到 UTF-32 转换（无检查）
-std::u32string utf8_to_utf32(const std::u8string &utf8_str)
-{
-    std::u32string result;
-    result.reserve(utf8_str.size()); // 最小预分配
-
-    for (size_t i = 0; i < utf8_str.size();)
-    {
-        uint8_t c = utf8_str[i];
-        size_t len = 0;
-        char32_t code_point = 0;
-
-        // 确定码点长度
-        if (c < 0x80)
-        {
-            len = 1;
-            code_point = c;
-        }
-        else if ((c & 0xE0) == 0xC0)
-        {
-            len = 2;
-            code_point = c & 0x1F;
-        }
-        else if ((c & 0xF0) == 0xE0)
-        {
-            len = 3;
-            code_point = c & 0x0F;
-        }
-        else if ((c & 0xF8) == 0xF0)
-        {
-            len = 4;
-            code_point = c & 0x07;
-        }
-        else
-        {
-            // 无效的UTF-8首字节，按单字节处理
-            len = 1;
-            code_point = c;
-        }
-
-        // 处理后续字节
-        for (size_t j = 1; j < len && (i + j) < utf8_str.size(); ++j)
-        {
-            code_point = (code_point << 6) | (utf8_str[i + j] & 0x3F);
-        }
-
-        result.push_back(code_point);
-        i += (len > 0) ? len : 1;
-    }
-
-    return result;
-}
-
-// UTF-32 到 UTF-8 转换（无检查）
-std::u8string utf32_to_utf8(const std::u32string &u32_str)
-{
-    std::u8string result;
-    result.reserve(u32_str.size() * 4); // 最大预分配
-
-    for (char32_t code_point : u32_str)
-    {
-        // 转换为UTF-8
-        if (code_point < 0x80)
-        {
-            result.push_back(static_cast<char8_t>(code_point));
-        }
-        else if (code_point < 0x800)
-        {
-            result.push_back(static_cast<char8_t>(0xC0 | (code_point >> 6)));
-            result.push_back(static_cast<char8_t>(0x80 | (code_point & 0x3F)));
-        }
-        else if (code_point < 0x10000)
-        {
-            result.push_back(static_cast<char8_t>(0xE0 | (code_point >> 12)));
-            result.push_back(static_cast<char8_t>(0x80 | ((code_point >> 6) & 0x3F)));
-            result.push_back(static_cast<char8_t>(0x80 | (code_point & 0x3F)));
-        }
-        else
-        {
-            result.push_back(static_cast<char8_t>(0xF0 | (code_point >> 18)));
-            result.push_back(static_cast<char8_t>(0x80 | ((code_point >> 12) & 0x3F)));
-            result.push_back(static_cast<char8_t>(0x80 | ((code_point >> 6) & 0x3F)));
-            result.push_back(static_cast<char8_t>(0x80 | (code_point & 0x3F)));
-        }
-    }
-
-    return result;
-}
+#include "uconv.hpp"
+#include "get_sys_lang.hpp"
 
 // 参数定义表
 static const std::map<std::u32string, int32_t> arg_table = {
@@ -215,7 +33,7 @@ static const std::map<std::u32string, int32_t> arg_table = {
 
 // 多语言字符串表
 static const std::map<std::string, std::map<std::u32string, std::u32string>> lang_table = {
-    {"zh-cn",
+    {"zh-CN",
      {
          {U"help_title", U"随机字符串生成器 - 帮助"},
          {U"help_usage", U"用法: randstr [选项]"},
@@ -238,7 +56,7 @@ static const std::map<std::string, std::map<std::u32string, std::u32string>> lan
          {U"error_count", U"错误: 数量必须是正整数"},
          {U"error_missing_arg", U"错误: 缺少参数 "},
      }},
-    {"en-us",
+    {"en-US",
      {
          {U"help_title", U"Random String Generator - Help"},
          {U"help_usage", U"Usage: randstr [options]"},
@@ -261,30 +79,7 @@ static const std::map<std::string, std::map<std::u32string, std::u32string>> lan
          {U"error_count", U"Error: Count must be a positive integer"},
          {U"error_missing_arg", U"Error: Missing argument"},
      }},
-    {"zh-tw",
-     {
-         {U"help_title", U"隨機字串生成器 - 幫助"},
-         {U"help_usage", U"用法: randstr [選項]"},
-         {U"help_options", U"選項:\n"
-                           U"  -h, -help      顯示幫助訊息\n"
-                           U"  -S <種子>      設置隨機種子 (64位整數)\n"
-                           U"  -s <種子>      設置種子並添加硬體熵\n"
-                           U"  -l <長度>      設置字串長度 (預設: 12)\n"
-                           U"  -c <數量>      設置生成字串數量 (預設: 1)\n"
-                           U"  -all           使用所有字符集\n"
-                           U"  -aa            添加小寫字母 (a-z)\n"
-                           U"  -aA            添加大寫字母 (A-Z)\n"
-                           U"  -a0            添加數字 (0-9)\n"
-                           U"  -a!            添加特殊字符\n"
-                           U"  -ai <字符>     添加自定義字符\n"
-                           U"  -af <文件>     從文件讀取自定義字符\n"
-                           U"  -o <文件>      輸出到文件\n"},
-         {U"error_seed", U"錯誤: 種子必須是64位整數"},
-         {U"error_length", U"錯誤: 長度必須是正整數"},
-         {U"error_count", U"錯誤: 數量必須是正整數"},
-         {U"error_missing_arg", U"錯誤: 引數不足"},
-     }},
-    {"ja-jp",
+    {"ja-JP",
      {
          {U"help_title", U"ランダム文字列生成器 - ヘルプ"},
          {U"help_usage", U"使用法: randstr [オプション]"},
@@ -323,7 +118,7 @@ std::u32string get_lang_string(const std::string &lang, const std::u32string &ke
     }
 
     // 后备到英语
-    auto en_iter = lang_table.find("en-us");
+    auto en_iter = lang_table.find("en-US");
     if (en_iter != lang_table.end())
     {
         const auto &en_map = en_iter->second;
@@ -362,85 +157,6 @@ bool parse_uint64(const std::u32string &str, uint64_t &value)
     }
     value = sum;
     return true;
-}
-
-// 本地编码转 UTF-8
-std::u8string local_to_utf8(const std::string &str)
-{
-    if (str.empty())
-    {
-        return std::u8string();
-    }
-#if defined(_WIN32) || defined(_WIN64)
-    // 检查是否启用了全局 UTF-8（代码页 65001）
-    bool UTF8_ENABLED = (GetACP() == 65001);
-
-    if (UTF8_ENABLED)
-    {
-        // 如果系统编码为 UTF-8，直接返回
-        return std::u8string(str.begin(), str.end());
-    }
-    else
-    {
-        // 获取终端代码页（例如 CP936 是 GBK）
-        UINT codePage = GetConsoleOutputCP();
-
-        // 多字节转宽字符
-        int wideLen = MultiByteToWideChar(codePage, 0, str.c_str(), -1, nullptr, 0);
-        std::wstring wideStr(wideLen, 0);
-        MultiByteToWideChar(codePage, 0, str.c_str(), -1, wideStr.data(), wideLen);
-
-        // 宽字符转 UTF-8
-        int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        std::string utf8Str(utf8Len, 0);
-        WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, utf8Str.data(), utf8Len, nullptr, nullptr);
-
-        return std::u8string(reinterpret_cast<const char8_t *>(utf8Str.c_str()));
-    }
-#else
-    // 非 Windows 平台，假设本地编码为 UTF-8
-    return std::u8string(str.begin(), str.end());
-#endif
-}
-
-// UTF-8 转本地编码
-std::string utf8_to_local(const std::u8string &str)
-{
-    if (str.empty())
-    {
-        return std::string();
-    }
-#if defined(_WIN32) || defined(_WIN64)
-    // 检查是否启用了全局 UTF-8（代码页 65001）
-    bool UTF8_ENABLED = (GetACP() == 65001);
-
-    if (UTF8_ENABLED)
-    {
-        // 如果系统编码为 UTF-8，直接返回
-        return std::string(str.begin(), str.end());
-    }
-    else
-    {
-        // 获取终端代码页（如 CP936 是 GBK）
-        UINT codePage = GetConsoleOutputCP();
-
-        // UTF-8 转宽字符
-        const char *utf8CStr = reinterpret_cast<const char *>(str.c_str());
-        int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8CStr, -1, nullptr, 0);
-        std::wstring wideStr(wideLen, 0);
-        MultiByteToWideChar(CP_UTF8, 0, utf8CStr, -1, wideStr.data(), wideLen);
-
-        // 宽字符转终端编码
-        int localLen = WideCharToMultiByte(codePage, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        std::string localStr(localLen, 0);
-        WideCharToMultiByte(codePage, 0, wideStr.c_str(), -1, localStr.data(), localLen, nullptr, nullptr);
-
-        return localStr;
-    }
-#else
-    // 非 Windows 平台，假设本地编码为 UTF-8
-    return std::string(str.begin(), str.end());
-#endif
 }
 
 // 生成随机字符串
@@ -485,8 +201,8 @@ std::u32string generate_random_string(const std::u32string &char_set,
 
 int run(int argc, const char *argv[])
 {
-    std::string lang = get_lang(); // 获取系统语言
-    std::u32string char_set;       // 字符集
+    std::string lang = get_sys_lang(); // 获取系统语言
+    std::u32string char_set;           // 字符集
 
     // 默认参数
     uint64_t seed = 0;                     // 种子
@@ -501,7 +217,7 @@ int run(int argc, const char *argv[])
     std::vector<std::u32string> args;
     for (int i = 0; i < argc; i++)
     {
-        args.push_back(utf8_to_utf32(local_to_utf8(argv[i])));
+        args.push_back(uconv::locale_to_utf32(argv[i]));
     }
 
     // 解析参数
@@ -524,7 +240,7 @@ int run(int argc, const char *argv[])
                 {
                     if (!parse_uint64(args[++i], seed))
                     {
-                        std::cerr << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_seed"))) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_seed")) << std::endl;
                         return 1;
                     }
                     else
@@ -534,8 +250,8 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -546,7 +262,7 @@ int run(int argc, const char *argv[])
                 {
                     if (!parse_uint64(args[++i], seed))
                     {
-                        std::cerr << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_seed"))) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_seed")) << std::endl;
                         return 1;
                     }
                     else
@@ -556,8 +272,8 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -572,14 +288,14 @@ int run(int argc, const char *argv[])
                     }
                     else
                     {
-                        std::cerr << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_length"))) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_length")) << std::endl;
                         return 1;
                     }
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -594,14 +310,14 @@ int run(int argc, const char *argv[])
                     }
                     else
                     {
-                        std::cerr << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_count"))) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_count")) << std::endl;
                         return 1;
                     }
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -637,8 +353,8 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -654,14 +370,14 @@ int run(int argc, const char *argv[])
                         std::string buffer;
                         while (std::getline(file, buffer)) // 读取文件
                         {
-                            char_set += utf8_to_utf32({buffer.begin(), buffer.end()});
+                            char_set += uconv::utf8_to_utf32({buffer.begin(), buffer.end()});
                         }
                     }
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -674,8 +390,8 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"error_missing_arg"))) << std::endl;
-                    std::cout << "  " << utf8_to_local(utf32_to_utf8(it->first)) << std::endl;
+                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
                 break;
@@ -686,9 +402,9 @@ int run(int argc, const char *argv[])
     // 显示帮助
     if (show_help)
     {
-        std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"help_title"))) << std::endl;
-        std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"help_usage"))) << std::endl;
-        std::cout << utf8_to_local(utf32_to_utf8(get_lang_string(lang, U"help_options"))) << std::endl;
+        std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"help_title")) << std::endl;
+        std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"help_usage")) << std::endl;
+        std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"help_options")) << std::endl;
         return 0;
     }
 
@@ -728,14 +444,14 @@ int run(int argc, const char *argv[])
         std::ofstream out(write_file_path);
         for (size_t i = 0; i < count; i++)
         {
-            out << utf8_to_local(utf32_to_utf8(generate_random_string(char_set, length, seed, use_hw_entropy))) << std::endl;
+            out << uconv::utf32_to_locale(generate_random_string(char_set, length, seed, use_hw_entropy)) << std::endl;
         }
     }
     else
     {
         for (size_t i = 0; i < count; i++)
         {
-            std::cout << utf8_to_local(utf32_to_utf8(generate_random_string(char_set, length, seed, use_hw_entropy))) << std::endl;
+            std::cout << uconv::utf32_to_locale(generate_random_string(char_set, length, seed, use_hw_entropy)) << std::endl;
         }
     }
     return 0;
