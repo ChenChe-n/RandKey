@@ -12,6 +12,7 @@
 
 #include "uconv.hpp"
 #include "get_sys_lang.hpp"
+#include "i18n_lang.hpp"
 
 // 参数定义表
 static const std::map<std::u32string, int32_t> arg_table = {
@@ -32,105 +33,58 @@ static const std::map<std::u32string, int32_t> arg_table = {
 };
 
 // 多语言字符串表
-static const std::map<std::string, std::map<std::u32string, std::u32string>> lang_table = {
-    {"zh-CN",
-     {
-         {U"help_title", U"随机字符串生成器 - 帮助"},
-         {U"help_usage", U"用法: randstr [选项]"},
-         {U"help_options", U"选项:\n"
-                           U"  -h, -help      显示帮助信息\n"
-                           U"  -S <种子>      设置随机数种子 (64位整数)\n"
-                           U"  -s <种子>      设置种子并添加硬件熵\n"
-                           U"  -l <长度>      设置字符串长度 (默认: 12)\n"
-                           U"  -c <数量>      设置生成字符串数量 (默认: 1)\n"
-                           U"  -all           使用所有字符集\n"
-                           U"  -aa            添加小写字母 (a-z)\n"
-                           U"  -aA            添加大写字母 (A-Z)\n"
-                           U"  -a0            添加数字 (0-9)\n"
-                           U"  -a!            添加特殊字符\n"
-                           U"  -ai <字符>     添加自定义字符\n"
-                           U"  -af <文件名>   从文件中读取字符\n"
-                           U"  -o <文件名>    输出到文件\n"},
-         {U"error_seed", U"错误: 种子必须是64位整数"},
-         {U"error_length", U"错误: 长度必须是正整数"},
-         {U"error_count", U"错误: 数量必须是正整数"},
-         {U"error_missing_arg", U"错误: 缺少参数 "},
-     }},
-    {"en-US",
-     {
-         {U"help_title", U"Random String Generator - Help"},
-         {U"help_usage", U"Usage: randstr [options]"},
-         {U"help_options", U"Options:\n"
-                           U"  -h, -help      Show this help message\n"
-                           U"  -S <seed>      Set random seed (64-bit integer)\n"
-                           U"  -s <seed>      Set seed with hardware entropy\n"
-                           U"  -l <length>    Set string length (default: 12)\n"
-                           U"  -c <count>     Set number of strings (default: 1)\n"
-                           U"  -all           Use all character sets\n"
-                           U"  -aa            Add lowercase letters (a-z)\n"
-                           U"  -aA            Add uppercase letters (A-Z)\n"
-                           U"  -a0            Add digits (0-9)\n"
-                           U"  -a!            Add special characters\n"
-                           U"  -ai <chars>    Add custom characters\n"
-                           U"  -af <file>     Read custom characters from file\n"
-                           U"  -o <file>       Write passwords to file\n"},
-         {U"error_seed", U"Error: Seed must be a 64-bit integer"},
-         {U"error_length", U"Error: Length must be a positive integer"},
-         {U"error_count", U"Error: Count must be a positive integer"},
-         {U"error_missing_arg", U"Error: Missing argument"},
-     }},
-    {"ja-JP",
-     {
-         {U"help_title", U"ランダム文字列生成器 - ヘルプ"},
-         {U"help_usage", U"使用法: randstr [オプション]"},
-         {U"help_options", U"オプション:\n"
-                           U"  -h, -help      ヘルプを表示\n"
-                           U"  -S <シード>    乱数シードを設定 (64ビット整数)\n"
-                           U"  -s <シード>    シードにハードウェアエントロピーを追加\n"
-                           U"  -l <長さ>      文字列の長さを設定 (デフォルト: 12)\n"
-                           U"  -c <数>        生成する文字列の数を設定 (デフォルト: 1)\n"
-                           U"  -all           すべての文字セットを使用\n"
-                           U"  -aa            小文字 (a-z) を追加\n"
-                           U"  -aA            大文字 (A-Z) を追加\n"
-                           U"  -a0            数字 (0-9) を追加\n"
-                           U"  -a!            特殊文字を追加\n"
-                           U"  -ai <文字>     カスタム文字を追加\n"
-                           U"  -af <ファイル>  カスタム文字をファイルから読み込む\n"
-                           U"  -o <ファイル>  出力先を指定\n"},
-         {U"error_seed", U"エラー: シードは64ビット整数である必要があります"},
-         {U"error_length", U"エラー: 長さは正の整数である必要があります"},
-         {U"error_count", U"エラー: 数は正の整数である必要があります"},
-         {U"error_missing_arg", U"エラー: 引数が不足しています"},
-     }}};
-
-// 获取本地化字符串
-std::u32string get_lang_string(const std::string &lang, const std::u32string &key)
-{
-    auto lang_iter = lang_table.find(lang);
-    if (lang_iter != lang_table.end())
+// static const std::map<std::string, std::map<std::u32string, std::u32string>> lang_table =
+static const i18n_lang<std::string, std::u32string, std::u32string> lang_table =
     {
-        const auto &lang_map = lang_iter->second;
-        auto str_iter = lang_map.find(key);
-        if (str_iter != lang_map.end())
-        {
-            return str_iter->second;
-        }
-    }
+        "en-US", {
 
-    // 后备到英语
-    auto en_iter = lang_table.find("en-US");
-    if (en_iter != lang_table.end())
-    {
-        const auto &en_map = en_iter->second;
-        auto str_iter = en_map.find(key);
-        if (str_iter != en_map.end())
-        {
-            return str_iter->second;
-        }
-    }
+                     {"zh-CN", {
+                                   {U"help_title", U"随机字符串生成器 - 帮助"},
+                                   {U"help_usage", U"用法: randstr [选项]"},
+                                   {U"help_options", U"选项:\n"
+                                                     U"  -h, -help      显示帮助信息\n"
+                                                     U"  -S <种子>      设置随机数种子 (64位整数)\n"
+                                                     U"  -s <种子>      设置种子并添加硬件熵\n"
+                                                     U"  -l <长度>      设置字符串长度 (默认: 12)\n"
+                                                     U"  -c <数量>      设置生成字符串数量 (默认: 1)\n"
+                                                     U"  -all           使用所有字符集\n"
+                                                     U"  -aa            添加小写字母 (a-z)\n"
+                                                     U"  -aA            添加大写字母 (A-Z)\n"
+                                                     U"  -a0            添加数字 (0-9)\n"
+                                                     U"  -a!            添加特殊字符\n"
+                                                     U"  -ai <字符>     添加自定义字符\n"
+                                                     U"  -af <文件名>   从文件中读取字符\n"
+                                                     U"  -o <文件名>    输出到文件\n"},
+                                   {U"error_seed", U"错误: 种子必须是64位整数"},
+                                   {U"error_length", U"错误: 长度必须是正整数"},
+                                   {U"error_count", U"错误: 数量必须是正整数"},
+                                   {U"error_missing_arg", U"错误: 缺少参数 "},
+                               }},
+                     {"en-US", {
+                                   {U"help_title", U"Random String Generator - Help"},
+                                   {U"help_usage", U"Usage: randstr [options]"},
+                                   {U"help_options", U"Options:\n"
+                                                     U"  -h, -help      Show this help message\n"
+                                                     U"  -S <seed>      Set random seed (64-bit integer)\n"
+                                                     U"  -s <seed>      Set seed with hardware entropy\n"
+                                                     U"  -l <length>    Set string length (default: 12)\n"
+                                                     U"  -c <count>     Set number of strings (default: 1)\n"
+                                                     U"  -all           Use all character sets\n"
+                                                     U"  -aa            Add lowercase letters (a-z)\n"
+                                                     U"  -aA            Add uppercase letters (A-Z)\n"
+                                                     U"  -a0            Add digits (0-9)\n"
+                                                     U"  -a!            Add special characters\n"
+                                                     U"  -ai <chars>    Add custom characters\n"
+                                                     U"  -af <file>     Read custom characters from file\n"
+                                                     U"  -o <file>      Write passwords to file\n"},
+                                   {U"error_seed", U"Error: Seed must be a 64-bit integer"},
+                                   {U"error_length", U"Error: Length must be a positive integer"},
+                                   {U"error_count", U"Error: Count must be a positive integer"},
+                                   {U"error_missing_arg", U"Error: Missing argument"},
+                               }},
+                 }
 
-    return U"[" + key + U"]";
-}
+};
 
 // 解析64位整数
 bool parse_uint64(const std::u32string &str, uint64_t &value)
@@ -240,7 +194,7 @@ int run(int argc, const char *argv[])
                 {
                     if (!parse_uint64(args[++i], seed))
                     {
-                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_seed")) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_seed")) << std::endl;
                         return 1;
                     }
                     else
@@ -250,7 +204,7 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -262,7 +216,7 @@ int run(int argc, const char *argv[])
                 {
                     if (!parse_uint64(args[++i], seed))
                     {
-                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_seed")) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_seed")) << std::endl;
                         return 1;
                     }
                     else
@@ -272,7 +226,7 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -288,13 +242,13 @@ int run(int argc, const char *argv[])
                     }
                     else
                     {
-                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_length")) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_length")) << std::endl;
                         return 1;
                     }
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -310,13 +264,13 @@ int run(int argc, const char *argv[])
                     }
                     else
                     {
-                        std::cerr << uconv::utf32_to_locale(get_lang_string(lang, U"error_count")) << std::endl;
+                        std::cerr << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_count")) << std::endl;
                         return 1;
                     }
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -353,7 +307,7 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -376,7 +330,7 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -390,7 +344,7 @@ int run(int argc, const char *argv[])
                 }
                 else
                 {
-                    std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"error_missing_arg")) << std::endl;
+                    std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"error_missing_arg")) << std::endl;
                     std::cout << "  " << uconv::utf32_to_locale(it->first) << std::endl;
                     return 1;
                 }
@@ -402,9 +356,9 @@ int run(int argc, const char *argv[])
     // 显示帮助
     if (show_help)
     {
-        std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"help_title")) << std::endl;
-        std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"help_usage")) << std::endl;
-        std::cout << uconv::utf32_to_locale(get_lang_string(lang, U"help_options")) << std::endl;
+        std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"help_title")) << std::endl;
+        std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"help_usage")) << std::endl;
+        std::cout << uconv::utf32_to_locale(lang_table.get_text(lang, U"help_options")) << std::endl;
         return 0;
     }
 
@@ -459,13 +413,6 @@ int run(int argc, const char *argv[])
 
 int main(int argc, const char *argv[])
 {
-    try
-    {
-        run(argc, argv);
-    }
-    catch (const std::runtime_error &e)
-    {
-        std::string msg = e.what();
-    }
+    run(argc, argv);
     return 0;
 }
