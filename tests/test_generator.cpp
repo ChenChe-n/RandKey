@@ -1,3 +1,4 @@
+#include <array>
 #include <iostream>
 #include <stdexcept>
 
@@ -78,10 +79,37 @@ int run_generator_tests()
         options.registry.add_token(U"語言");
         options.registry.add_token(U"テスト");
 
+        auto deterministic = generator.generate(options, 12345ULL, std::nullopt);
+        expect(deterministic.keys.size() == 1, "should produce one key");
+
+        const std::array<std::u32string, 2> tokens = {U"語言", U"テスト"};
+        const std::u32string &key = deterministic.keys[0];
+        std::size_t offset = 0;
+        bool segmentation_ok = true;
+        while (offset < key.size())
+        {
+            bool matched = false;
+            for (const auto &token : tokens)
+            {
+                if (offset + token.size() <= key.size() && key.compare(offset, token.size(), token) == 0)
+                {
+                    offset += token.size();
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                segmentation_ok = false;
+                break;
+            }
+        }
+
+        expect(segmentation_ok && offset == key.size(), "key should be concatenation of full tokens");
+
         auto outcome = generator.generate(options, std::nullopt, 7ULL);
-        expect(outcome.keys.size() == 1, "should produce one key");
-        expect(outcome.keys[0].size() % 2 == 0, "multi-character tokens should concatenate as units");
-        expect(outcome.keys[0].size() >= 6, "token length should reflect phrase size");
+        expect(outcome.keys.size() == 1, "should still generate with mixing seed");
     }
 
     return failures;

@@ -1,7 +1,6 @@
 #include "randkey/platform/encoding.hpp"
 
-#include <codecvt>
-#include <locale>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -20,30 +19,147 @@ namespace randkey::platform
 {
     namespace
     {
-        std::u32string utf8_to_utf32_fallback(std::string_view input)
+        [[noreturn]] void throw_invalid_utf8()
         {
-            std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
-            try
-            {
-                return converter.from_bytes(input.data(), input.data() + input.size());
-            }
-            catch (const std::range_error &)
-            {
-                throw std::runtime_error("UTF-8 到 UTF-32 转换失败");
-            }
+            throw std::runtime_error("UTF-8 到 UTF-32 转换失败");
         }
 
-        std::string utf32_to_utf8_fallback(std::u32string_view input)
+        [[noreturn]] void throw_invalid_utf32()
         {
-            std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> converter;
-            try
+            throw std::runtime_error("UTF-32 到 UTF-8 转换失败");
+        }
+
+        std::u32string utf8_to_utf32_strict(std::string_view input)
+        {
+            std::u32string result;
+            result.reserve(input.size());
+
+            std::size_t index = 0;
+            while (index < input.size())
             {
-                return converter.to_bytes(input.data(), input.data() + input.size());
+                unsigned char byte = static_cast<unsigned char>(input[index]);
+                char32_t codepoint = 0;
+                std::size_t additional = 0;
+
+                if (byte <= 0x7F)
+                {
+                    codepoint = byte;
+                }
+                else if (byte >= 0xC2 && byte <= 0xDF)
+                {
+                    codepoint = byte & 0x1FU;
+                    additional = 1;
+                }
+                else if (byte >= 0xE0 && byte <= 0xEF)
+                {
+                    codepoint = byte & 0x0FU;
+                    additional = 2;
+                }
+                else if (byte >= 0xF0 && byte <= 0xF4)
+                {
+                    codepoint = byte & 0x07U;
+                    additional = 3;
+                }
+                else
+                {
+                    throw_invalid_utf8();
+                }
+
+                if (index + additional >= input.size())
+                {
+                    throw_invalid_utf8();
+                }
+
+                for (std::size_t i = 1; i <= additional; ++i)
+                {
+                    unsigned char continuation = static_cast<unsigned char>(input[index + i]);
+                    if ((continuation & 0xC0U) != 0x80U)
+                    {
+                        throw_invalid_utf8();
+                    }
+                }
+
+                switch (additional)
+                {
+                case 1:
+                    codepoint = (codepoint << 6U) | (static_cast<unsigned char>(input[index + 1]) & 0x3FU);
+                    break;
+                case 2:
+                {
+                    unsigned char b1 = static_cast<unsigned char>(input[index + 1]);
+                    unsigned char b2 = static_cast<unsigned char>(input[index + 2]);
+                    if ((byte == 0xE0 && b1 < 0xA0) || (byte == 0xED && b1 >= 0xA0))
+                    {
+                        throw_invalid_utf8();
+                    }
+                    codepoint = (codepoint << 12U) | ((b1 & 0x3FU) << 6U) | (b2 & 0x3FU);
+                    break;
+                }
+                case 3:
+                {
+                    unsigned char b1 = static_cast<unsigned char>(input[index + 1]);
+                    unsigned char b2 = static_cast<unsigned char>(input[index + 2]);
+                    unsigned char b3 = static_cast<unsigned char>(input[index + 3]);
+                    if ((byte == 0xF0 && b1 < 0x90) || (byte == 0xF4 && b1 > 0x8F))
+                    {
+                        throw_invalid_utf8();
+                    }
+                    codepoint = (codepoint << 18U) | ((b1 & 0x3FU) << 12U) | ((b2 & 0x3FU) << 6U) | (b3 & 0x3FU);
+                    break;
+                }
+                default:
+                    break;
+                }
+
+                if (codepoint > 0x10FFFFU || (codepoint >= 0xD800U && codepoint <= 0xDFFFU))
+                {
+                    throw_invalid_utf8();
+                }
+
+                result.push_back(codepoint);
+                index += 1 + additional;
             }
-            catch (const std::range_error &)
+
+            return result;
+        }
+
+        std::string utf32_to_utf8_strict(std::u32string_view input)
+        {
+            std::string result;
+            result.reserve(input.size() * 4);
+
+            for (char32_t codepoint : input)
             {
-                throw std::runtime_error("UTF-32 到 UTF-8 转换失败");
+                if (codepoint > 0x10FFFFU || (codepoint >= 0xD800U && codepoint <= 0xDFFFU))
+                {
+                    throw_invalid_utf32();
+                }
+
+                if (codepoint <= 0x7FU)
+                {
+                    result.push_back(static_cast<char>(codepoint));
+                }
+                else if (codepoint <= 0x7FFU)
+                {
+                    result.push_back(static_cast<char>(0xC0U | ((codepoint >> 6U) & 0x1FU)));
+                    result.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
+                }
+                else if (codepoint <= 0xFFFFU)
+                {
+                    result.push_back(static_cast<char>(0xE0U | ((codepoint >> 12U) & 0x0FU)));
+                    result.push_back(static_cast<char>(0x80U | ((codepoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
+                }
+                else
+                {
+                    result.push_back(static_cast<char>(0xF0U | ((codepoint >> 18U) & 0x07U)));
+                    result.push_back(static_cast<char>(0x80U | ((codepoint >> 12U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | ((codepoint >> 6U) & 0x3FU)));
+                    result.push_back(static_cast<char>(0x80U | (codepoint & 0x3FU)));
+                }
             }
+
+            return result;
         }
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -113,12 +229,12 @@ namespace randkey::platform
 
     std::u32string utf8_to_utf32(std::string_view input)
     {
-        return utf8_to_utf32_fallback(input);
+        return utf8_to_utf32_strict(input);
     }
 
     std::string utf32_to_utf8(std::u32string_view input)
     {
-        return utf32_to_utf8_fallback(input);
+        return utf32_to_utf8_strict(input);
     }
 
     std::u32string locale_to_utf32(std::string_view input)
@@ -157,19 +273,19 @@ namespace randkey::platform
             throw std::runtime_error("UTF-16 到 UTF-8 转换失败");
         }
 
-        return utf8_to_utf32_fallback(utf8);
+        return utf8_to_utf32_strict(utf8);
 #elif defined(__unix__) || defined(__APPLE__)
         std::string locale_enc = get_locale_encoding();
         std::string source(input);
         if (locale_enc == "UTF-8")
         {
-            return utf8_to_utf32_fallback(source);
+            return utf8_to_utf32_strict(source);
         }
 
         std::string utf8 = convert_encoding(source, locale_enc.c_str(), "UTF-8");
-        return utf8_to_utf32_fallback(utf8);
+        return utf8_to_utf32_strict(utf8);
 #else
-        return utf8_to_utf32_fallback(std::string(input));
+        return utf8_to_utf32_strict(std::string(input));
 #endif
     }
 
@@ -181,7 +297,7 @@ namespace randkey::platform
         }
 
 #if defined(_WIN32)
-        std::string utf8 = utf32_to_utf8_fallback(input);
+        std::string utf8 = utf32_to_utf8_strict(input);
 
         const int wide_size = MultiByteToWideChar(CP_UTF8, 0,
                                                   utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
@@ -213,7 +329,7 @@ namespace randkey::platform
 
         return local;
 #elif defined(__unix__) || defined(__APPLE__)
-        std::string utf8 = utf32_to_utf8_fallback(input);
+        std::string utf8 = utf32_to_utf8_strict(input);
         std::string locale_enc = get_locale_encoding();
         if (locale_enc == "UTF-8")
         {
@@ -222,7 +338,7 @@ namespace randkey::platform
 
         return convert_encoding(utf8, "UTF-8", locale_enc.c_str());
 #else
-        return utf32_to_utf8_fallback(input);
+        return utf32_to_utf8_strict(input);
 #endif
     }
 }
